@@ -8,17 +8,11 @@ import Text.Megaparsec.String
 import qualified Text.Megaparsec.Lexer as L
 import Lib
 
--- type Range = [Integer]
--- data Term l = Term (Syntax l) Range
--- data Syntax a = Leaf a
---               | Indexed [Syntax a]
---               deriving (Eq, Show)
 data Term = Leaf String String [Integer]
           | Params String [String]
           | Block String [Term] String
           | Indexed String [Term]
           deriving(Eq, Show)
-
 
 sc :: Parser ()
 sc = L.space (void spaceChar) empty empty
@@ -41,9 +35,6 @@ quotes = between (symbol "\"") (symbol "\"")
 pItem :: Parser String
 pItem = lexeme $ some (alphaNumChar <|> char ':' <|> char '@' <|> char '_')
 
--- pItem' :: Parser Term
--- pItem' = liftA Leaf (lexeme $ some (alphaNumChar <|> char ':' <|> char '@'))
-
 pRange :: Parser [Integer]
 pRange = sepBy1 L.integer (symbol ",")
 
@@ -63,6 +54,11 @@ pParamsTerm name = do
   params <- sepBy1 pItem (symbol ",")
   return $ Params name params
 
+pName :: Parser Term
+pName = do
+  value <- pItem
+  return $ Leaf "" value []
+
 pBlockTerm :: String -> Parser Term
 pBlockTerm name = do
   next <- pTerms <* symbol ","
@@ -70,7 +66,7 @@ pBlockTerm name = do
   return $ Block name next ret
 
 pTerm :: Parser Term
-pTerm = doubleBrackets go <|> brackets go
+pTerm = doubleBrackets go <|> brackets go <|> pName
   where
     go = do
       name <- pItem <* lexeme (symbol ",")
