@@ -8,11 +8,12 @@ import Text.Megaparsec.String
 import qualified Text.Megaparsec.Lexer as L
 import Lib
 
-data Term = Leaf String String [Integer]
-          | Params String [String]
-          | Block String [Term] String
-          | Indexed String [Term]
-          deriving(Eq, Show)
+data Term =
+    Leaf String
+  | Method Term [Term] [Term]          -- a method with an identifier, list of params, list of statements
+  | Identifier String String [Integer]
+  | Indexed [Term]
+  deriving(Eq, Show)
 
 sc :: Parser ()
 sc = L.space (void spaceChar) empty empty
@@ -26,9 +27,6 @@ symbol = L.symbol sc
 brackets :: Parser a -> Parser a
 brackets = between (symbol "[") (symbol "]")
 
-doubleBrackets :: Parser a -> Parser a
-doubleBrackets = between (symbol "[[") (symbol "]]")
-
 quotes :: Parser a -> Parser a
 quotes = between (symbol "\"") (symbol "\"")
 
@@ -38,42 +36,44 @@ pItem = lexeme $ some (alphaNumChar <|> char ':' <|> char '@' <|> char '_')
 pRange :: Parser [Integer]
 pRange = sepBy1 L.integer (symbol ",")
 
-pValueRange :: String -> Parser Term
-pValueRange name = do
-  value <- quotes pItem <* lexeme (symbol ",")
-  range <- brackets pRange
-  return $ Leaf name value range
-
-pNestedTerm :: String -> Parser Term
-pNestedTerm name = do
-  next <- pTerms
-  return $ Indexed name next
-
-pParamsTerm :: String -> Parser Term
-pParamsTerm name = do
-  params <- sepBy1 pItem (symbol ",")
-  return $ Params name params
-
-pName :: Parser Term
-pName = do
+-- false
+pLiteral :: Parser Term
+pLiteral = do
   value <- pItem
-  return $ Leaf "" value []
+  return $ Leaf value
 
-pBlockTerm :: String -> Parser Term
-pBlockTerm name = do
-  next <- pTerms <* symbol ","
-  ret <- pItem
-  return $ Block name next ret
+-- "hello"
+pString :: Parser Term
+pString = Leaf <$> quotes pItem
+
+-- [:@ident, "hello", [1, 4]]
+pIdent :: Parser Term
+pIdent = do
+  symbol "[:@"
+  name <- pItem <* symbol ","
+  value <- quotes pItem <* symbol ","
+  range <- brackets pRange
+  symbol "]"
+  return $ Identifier name value range
+
+--  [:def, [:@ident, ...], [:params, ...], [:bodystmt, ...]]
+pMethod :: Parser Term
+pMethod = do
+  symbol "[:def,"
+  ident <- pIdent <* symbol ","
+  params <- pArray' <* symbol ","
+  stmts <- pArray'
+  symbol "]"
+  return $ Method ident params stmts
+
+pArray :: Parser Term
+pArray = Indexed <$> pArray'
+
+pArray' :: Parser [Term]
+pArray' = brackets (sepBy1 pTerm (symbol ","))
 
 pTerm :: Parser Term
-pTerm = doubleBrackets go <|> brackets go <|> pName
-  where
-    go = do
-      name <- pItem <* lexeme (symbol ",")
-      pValueRange name <|> pNestedTerm name <|> pParamsTerm name
-
-pTerms :: Parser [Term]
-pTerms = sepBy1 pTerm (symbol ",")
+pTerm = pLiteral <|> pString <|> pIdent <|> pMethod <|> pArray
 
 parser :: Parser Term
 parser = pTerm <* eof
@@ -82,9 +82,9 @@ main :: IO ()
 main = do
   parseTest parser "[:@ident, \"hello\", [1, 4]]"
   parseTest parser "[:string_content, [:@tstring_content, \"hey\", [1, 17]]]"
-  parseTest parser "[:def, [:@ident, \"hello\", [1, 4]], [:@tstring_content, \"hey\", [1, 17]]]"
-  parseTest parser "[:def,\n[:@ident, \"hello\", [1, 4]],\n[:params, nil, nil, nil, nil, nil, nil, nil]]"
-  parseTest parser "[:program, [[:def, [:@ident, \"hello\", [1, 4]]]]]"
+  -- parseTest parser "[:def, [:@ident, \"hello\", [1, 4]], [:@tstring_content, \"hey\", [1, 17]]]"
+  -- parseTest parser "[:def,\n[:@ident, \"hello\", [1, 4]],\n[:params, nil, nil, nil, nil, nil, nil, nil]]"
+  -- parseTest parser "[:program, [[:def, [:@ident, \"hello\", [1, 4]]]]]"
   parseTest parser program
 
 
